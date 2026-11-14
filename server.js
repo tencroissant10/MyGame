@@ -298,6 +298,17 @@ function handleAction(room, me, body) {
       nextRound(room);
       return null;
 
+    case 'closeRoom': // 部屋主による強制終了：ルームを解散し、全員を参加前の画面へ戻す
+      if (!isHost) return '部屋主だけがゲームを終了できます';
+      for (const p of room.players.slice()) {
+        for (const res of p.conns) {
+          try { res.write(`data: ${JSON.stringify({ error: '部屋主がゲームを終了しました', closed: true })}\n\n`); res.end(); } catch {}
+        }
+        p.conns.clear();
+      }
+      rooms.delete(room.code);
+      return null;
+
     case 'replay':
       if (!isHost) return '部屋主だけが再戦を開始できます';
       if (room.phase !== 'final') return 'ゲームが終了していません';

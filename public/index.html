@@ -533,7 +533,7 @@ function viewFinal() {
 // ---------- お題作成モーダル ----------
 function openCustom() {
   const root = $('#modal-root');
-  root.innerHTML = `<div class="modal-bg" data-act="closeModal"><div class="modal" onclick="event.stopPropagation()">
+  root.innerHTML = `<div class="modal-bg" data-act="closeModal"><div class="modal">
     <h2>✏️ 自分でお題を作る</h2>
     <label>お題</label><input type="text" id="c-topic" maxlength="30" placeholder="例: 好きな〇〇">
     <label style="margin-top:8px">選択肢（5個）</label>

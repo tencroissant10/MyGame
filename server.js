@@ -79,13 +79,24 @@ function startGame(room) {
   for (const a of members) { correct[a] = {}; for (const b of members) if (a !== b) correct[a][b] = 0; }
   room.game = {
     members,
-    order: shuffle(members), // 出題順
+    order: [], // 出題（答え合わせ）の順。全員のランキングが出そろってから決める
     idx: 0,
     scores: Object.fromEntries(members.map((id) => [id, 0])),
     correct, // correct[a][b] = a が b のランキングを当てた個数
     usedTopics: new Set(),
+    sheets: {}, // 各自のお題とランキング { topic, choices, answer }
     round: null,
   };
+  // 全員に別々のお題を配り、同時にランキングを作ってもらう
+  for (const id of members) room.game.sheets[id] = { ...pickTopic(room.game), answer: null };
+  room.phase = 'ranking';
+}
+
+// ランキング提出済みの人だけで、予想→答え合わせのラウンドを開始する
+function beginGuessing(room) {
+  const g = room.game;
+  g.order = shuffle(g.members.filter((id) => g.sheets[id].answer));
+  g.idx = 0;
   beginRound(room);
 }
 
@@ -99,9 +110,10 @@ function pickTopic(game) {
 
 function beginRound(room) {
   const g = room.game;
-  const { topic, choices } = pickTopic(g);
-  g.round = { presenterId: g.order[g.idx], topic, choices, answer: null, guesses: {}, results: null };
-  room.phase = 'ranking';
+  const presenterId = g.order[g.idx];
+  const { topic, choices, answer } = g.sheets[presenterId];
+  g.round = { presenterId, topic, choices, answer, guesses: {}, results: null };
+  room.phase = 'guessing';
 }
 
 const guessersOf = (room) => room.game.members.filter((id) => id !== room.game.round.presenterId);
@@ -157,28 +169,27 @@ function viewFor(room, me) {
     phase: room.phase,
     players: room.players.map((p) => ({ id: p.id, name: p.name, online: online(p), score: g ? g.scores[p.id] ?? 0 : 0 })),
   };
-  if (g && room.phase !== 'lobby') {
+  if (g && room.phase === 'ranking') {
+    // 自分のお題・ランキングだけを送る。他人については「提出済みか」だけ
+    if (g.sheets[me.id]) v.mySheet = g.sheets[me.id];
+    v.submitted = g.members.filter((id) => g.sheets[id].answer);
+    v.members = g.members;
+  }
+  if (g && ['guessing', 'reveal', 'final'].includes(room.phase)) {
     v.roundNum = Math.min(g.idx + 1, g.order.length);
     v.roundTotal = g.order.length;
     v.order = g.order;
   }
   const r = g?.round;
-  if (r && ['ranking', 'guessing', 'reveal'].includes(room.phase)) {
+  if (r && ['guessing', 'reveal'].includes(room.phase)) {
     const isPresenter = r.presenterId === me.id;
-    v.round = { presenterId: r.presenterId, guessers: guessersOf(room) };
-    if (room.phase === 'ranking') {
-      if (isPresenter) { v.round.topic = r.topic; v.round.choices = r.choices; }
+    v.round = { presenterId: r.presenterId, guessers: guessersOf(room), topic: r.topic, choices: r.choices, answered: Object.keys(r.guesses) };
+    if (room.phase === 'guessing') {
+      if (isPresenter) v.round.answer = r.answer;          // 正解は出題者本人にだけ
+      if (r.guesses[me.id]) v.round.myGuess = r.guesses[me.id]; // 予想は本人にだけ
     } else {
-      v.round.topic = r.topic;
-      v.round.choices = r.choices;
-      v.round.answered = Object.keys(r.guesses);
-      if (room.phase === 'guessing') {
-        if (isPresenter) v.round.answer = r.answer;          // 正解は出題者本人にだけ
-        if (r.guesses[me.id]) v.round.myGuess = r.guesses[me.id]; // 予想は本人にだけ
-      } else {
-        v.round.answer = r.answer;
-        v.round.results = r.results;
-      }
+      v.round.answer = r.answer;
+      v.round.results = r.results;
     }
   }
   if (room.phase === 'final') v.final = finalSummary(room);
@@ -199,6 +210,7 @@ function handleAction(room, me, body) {
   const g = room.game, r = g?.round;
   const isHost = room.hostId === me.id;
   const isPresenter = r && r.presenterId === me.id;
+  const mySheet = g?.sheets[me.id];
 
   switch (body.type) {
     case 'start':
@@ -226,28 +238,34 @@ function handleAction(room, me, body) {
       return null;
 
     case 'reroll':
-      if (room.phase !== 'ranking' || !isPresenter) return 'いまはお題を変更できません';
-      Object.assign(r, pickTopic(g));
+      if (room.phase !== 'ranking' || !mySheet || mySheet.answer) return 'いまはお題を変更できません';
+      Object.assign(mySheet, pickTopic(g));
       return null;
 
     case 'custom': {
-      if (room.phase !== 'ranking' || !isPresenter) return 'いまはお題を変更できません';
+      if (room.phase !== 'ranking' || !mySheet || mySheet.answer) return 'いまはお題を変更できません';
       const topic = cleanText(body.topic, 30);
       const choices = Array.isArray(body.choices) ? body.choices.map((c) => cleanText(c, 20)) : [];
       if (!topic) return 'お題を入力してください';
       if (choices.length !== 5 || choices.some((c) => !c)) return '選択肢を5個すべて入力してください';
       if (new Set(choices).size !== 5) return '選択肢が重複しています';
-      r.topic = topic;
-      r.choices = choices;
+      mySheet.topic = topic;
+      mySheet.choices = choices;
       return null;
     }
+
+    case 'unsubmit': // 全員がそろう前なら自分のランキングを修正できる
+      if (room.phase !== 'ranking' || !mySheet?.answer) return 'いまは修正できません';
+      mySheet.answer = null;
+      return null;
 
     case 'submitRanking': {
       if (!isValidOrder(body.order)) return '1位〜5位をすべて重複なく選んでください';
       if (room.phase === 'ranking') {
-        if (!isPresenter) return '出題者がランキングを作成中です';
-        r.answer = body.order.slice();
-        room.phase = 'guessing';
+        if (!mySheet) return 'このゲームの参加者ではありません';
+        if (mySheet.answer) return 'すでにランキングを提出済みです';
+        mySheet.answer = body.order.slice();
+        if (g.members.every((id) => g.sheets[id].answer)) beginGuessing(room);
         return null;
       }
       if (room.phase === 'guessing') {
@@ -267,10 +285,11 @@ function handleAction(room, me, body) {
       reveal(room);
       return null;
 
-    case 'skipRound':
+    case 'forceStartGuessing': // 未提出の人を待たずに予想タイムへ（未提出者のお題は出題されない）
       if (!isHost) return '部屋主だけが操作できます';
-      if (room.phase !== 'ranking') return 'いまはスキップできません';
-      nextRound(room);
+      if (room.phase !== 'ranking') return 'いまは開始できません';
+      if (!g.members.some((id) => g.sheets[id].answer)) return 'まだ誰もランキングを提出していません';
+      beginGuessing(room);
       return null;
 
     case 'next':

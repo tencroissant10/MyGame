@@ -228,7 +228,8 @@ function renderHeader() {
 function render() {
   if (!S) return;
   renderHeader();
-  const k = `${S.phase}|${S.roundNum}|${S.round?.topic}|${(S.round?.choices || []).join('/')}`;
+  const t = S.mySheet || S.round;
+  const k = `${S.phase}|${S.roundNum}|${t?.topic}|${(t?.choices || []).join('/')}|${S.mySheet?.answer ? 1 : 0}`;
   if (k !== ui.key) { ui.key = k; ui.draft = [null,null,null,null,null]; }
   if (S.phase !== ui.phase) { ui.phase = S.phase; window.scrollTo({ top: 0 }); }
 
@@ -282,10 +283,10 @@ function goHome() {
       <h3>遊び方</h3>
       <ol class="rules">
         <li>部屋主がルームを作り、リンクか番号を友達に送る</li>
-        <li>出題者がお題の5つの選択肢を自分の好みで1〜5位に並べる</li>
-        <li>ほかの人は出題者のランキングを予想する</li>
+        <li>全員が同時に、それぞれ別のお題で5つの選択肢を好きな順に1〜5位に並べる</li>
+        <li>1人ずつ順番に出題。ほかの人はその人のランキングを予想して答え合わせ</li>
         <li>1つ当たるごとに<b>1pt</b>、全部当てたら<b>7pt</b>！</li>
-        <li>全員が1回ずつ出題したら終了。優勝者と<b>相性No.1ペア</b>を発表</li>
+        <li>全員分の答え合わせが終わったら、優勝者と<b>相性No.1ペア</b>を発表</li>
       </ol>
     </div>`;
   try { const n = localStorage.getItem('rankgame.name'); if (n) $('#name').value = n; } catch {}
@@ -301,6 +302,8 @@ function playerList(mode) {
     if (mode === 'lobby') {
       tag = p.id === S.hostId ? '<span class="tag">👑 部屋主</span>' : '';
       if (isHost() && p.id !== S.me) tag += `<button class="linkbtn" data-act="kick" data-id="${p.id}">退出させる</button>`;
+    } else if (S.phase === 'ranking') {
+      tag = S.submitted.includes(p.id) ? '<span class="tag ok">✓ 提出済み</span>' : '<span class="tag wait">作成中…</span>';
     } else if (r) {
       if (p.id === r.presenterId) tag = '<span class="tag p">🎤 出題者</span>';
       else if (S.phase === 'guessing') tag = r.answered.includes(p.id) ? '<span class="tag ok">✓ 回答済み</span>' : '<span class="tag wait">考え中…</span>';
@@ -348,8 +351,7 @@ function viewLobby() {
     </aside></div>`;
 }
 
-function ranker(submitLabel) {
-  const ch = S.round.choices;
+function ranker(submitLabel, ch = S.round.choices) {
   const used = new Set(ui.draft.filter((x) => x !== null));
   const nextIdx = ui.draft.indexOf(null);
   const slots = ui.draft.map((c, i) => `
@@ -370,28 +372,39 @@ function ranker(submitLabel) {
 function topicBox(r) { return `<div class="topic"><span class="label">お題</span>${esc(r.topic)}</div>`; }
 
 function viewRanking() {
-  const r = S.round;
+  const sh = S.mySheet;
+  const total = S.members.length, done = S.submitted.length;
+  const missing = S.members.filter((id) => !S.submitted.includes(id));
   let body;
-  if (r.presenterId === S.me) {
+  if (!sh) {
+    body = `<section class="card"><div class="waiting"><div class="spinner"></div><p class="muted">みんながランキングを作成中です…</p></div></section>`;
+  } else if (!sh.answer) {
     body = `<section class="card">
-      <h2>🎤 あなたが出題者です</h2>
-      <p class="muted">あなたの好みで1位〜5位を決めてください。みんながそれを予想します。</p>
-      ${topicBox(r)}
+      <h2>✍️ あなたのランキングを作ろう</h2>
+      <p class="muted">全員がそれぞれ別のお題でランキングを作ります。あなたの好みで1位〜5位を決めてください。あとでみんながこれを予想します。</p>
+      ${topicBox(sh)}
       <div class="row" style="margin-bottom:16px">
         <button class="btn ghost small" data-act="reroll">🎲 お題を変える</button>
         <button class="btn ghost small" data-act="custom">✏️ 自分でお題を作る</button>
       </div>
-      ${ranker('このランキングで決定！')}
+      ${ranker('このランキングで決定！', sh.choices)}
     </section>`;
   } else {
-    body = `<section class="card"><div class="waiting">
-      <div class="spinner"></div>
-      <h2 style="margin:0">${esc(nameOf(r.presenterId))}さんがランキングを作成中…</h2>
-      <p class="muted">お題が決まったら予想スタート！ どんなランキングにするか想像しておこう</p>
-      ${isHost() ? '<button class="linkbtn" data-act="skipRound">出題者が応答しない場合：この出題をスキップ</button>' : ''}
-    </div></section>`;
+    body = `<section class="card"><h2>✓ ランキングを提出しました</h2>
+      ${topicBox(sh)}<p class="muted">あなたのランキング（ほかの人には見えません）</p>
+      ${listRanking(sh.answer, sh.choices)}
+      <div class="waiting" style="padding:16px 0 0"><div class="spinner"></div>
+        <div class="muted">全員がそろうと予想タイムが始まります</div>
+        <button class="linkbtn" data-act="unsubmit">ランキングを修正する</button></div></section>`;
   }
-  return `${roundBanner()}<div class="layout two" style="margin-top:16px"><div>${body}</div>${sidePanel()}</div>`;
+  const progress = `<div class="card">
+    <h3>提出状況 ${done} / ${total}</h3>
+    <div class="progress"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div>
+    ${missing.length ? `<p class="muted">作成中：${missing.map((id) => esc(nameOf(id))).join('、')}</p>` : ''}
+    ${isHost() && missing.length && done ? '<button class="linkbtn" data-act="forceStartGuessing">作成中の人を待たずに予想タイムを始める</button>' : ''}
+  </div>`;
+  const banner = `<div class="banner"><span>ランキング作成タイム</span><span class="spacer"></span><small>全員で同時に作成中</small></div>`;
+  return `${banner}<div class="layout two" style="margin-top:16px"><div>${body}<div style="margin-top:16px">${progress}</div></div>${sidePanel()}</div>`;
 }
 
 function listRanking(order, choices) {
@@ -553,7 +566,8 @@ const handlers = {
     if (!ok) el.disabled = false;
   },
   forceReveal: () => { if (confirm('未回答の人は0ptになります。答え合わせしますか？')) act('forceReveal'); },
-  skipRound: () => { if (confirm(`${nameOf(S.round.presenterId)}さんの出題をスキップしますか？`)) act('skipRound'); },
+  forceStartGuessing: () => { if (confirm('作成中の人のお題は出題されません。予想タイムを始めますか？')) act('forceStartGuessing'); },
+  unsubmit: () => act('unsubmit'),
   next: () => act('next'),
   replay: () => { if (confirm('ポイントと相性をリセットして、同じメンバーで新しいゲームを始めますか？')) act('replay'); },
 };

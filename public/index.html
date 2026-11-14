@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ff7a59">
+<title>ランキング予想ゲーム</title>
+<style>
+:root{
+  --bg:#fff7f0; --card:#ffffff; --ink:#2b2340; --sub:#7a7190; --line:#eee3da;
+  --accent:#ff7a59; --accent2:#7c5cff; --ok:#1fb57a; --ng:#ef4b5f; --warn:#f5a524;
+  --gold:#ffcf40; --silver:#cfd6e3; --bronze:#e7a46b; --soft:#f6f1ff;
+  --radius:16px; --shadow:0 6px 24px rgba(60,30,90,.08);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  -webkit-tap-highlight-color:transparent}
+body{min-height:100vh;background:
+  radial-gradient(circle at 10% 0%, #ffe3d6 0, transparent 40%),
+  radial-gradient(circle at 100% 20%, #e9e1ff 0, transparent 40%), var(--bg);}
+button,input{font:inherit;color:inherit}
+.wrap{max-width:1040px;margin:0 auto;padding:12px 16px 40px}
+header.top{display:flex;align-items:center;gap:10px;padding:6px 0 12px}
+.logo{font-weight:800;font-size:18px;letter-spacing:.02em}
+.logo b{color:var(--accent)}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);
+  border-radius:999px;padding:4px 10px;font-size:13px;color:var(--sub)}
+.spacer{flex:1}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block}
+.dot.off{background:#c9c2d6}
+.layout{display:grid;gap:16px}
+@media (min-width:860px){ .layout.two{grid-template-columns:1fr 320px;align-items:start} .layout.eq{grid-template-columns:1fr 1fr;align-items:start} }
+.layout > .card + .card{margin-top:0}
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px;border:1px solid var(--line)}
+.card + .card{margin-top:16px}
+h1{font-size:28px;margin:0 0 6px} h2{font-size:20px;margin:0 0 12px} h3{font-size:16px;margin:0 0 10px}
+.muted{color:var(--sub);font-size:14px}
+.center{text-align:center}
+label{display:block;font-weight:700;font-size:14px;margin:0 0 6px}
+input[type=text],input[type=tel]{width:100%;padding:14px;border-radius:12px;border:2px solid var(--line);background:#fff;font-size:16px;outline:none}
+input:focus{border-color:var(--accent2)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:12px;
+  padding:14px 18px;font-weight:800;font-size:16px;cursor:pointer;background:var(--accent);color:#fff;
+  box-shadow:0 4px 0 #d9583a;transition:transform .05s, filter .15s;width:100%}
+.btn:active{transform:translateY(2px);box-shadow:0 2px 0 #d9583a}
+.btn.purple{background:var(--accent2);box-shadow:0 4px 0 #5a3fd6}
+.btn.ghost{background:#fff;color:var(--ink);border:2px solid var(--line);box-shadow:none}
+.btn.small{padding:8px 12px;font-size:14px;width:auto;border-radius:10px}
+.btn[disabled]{filter:grayscale(1) opacity(.5);cursor:not-allowed;transform:none}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row > *{flex:1}
+.or{display:flex;align-items:center;gap:10px;color:var(--sub);font-size:13px;margin:18px 0}
+.or:before,.or:after{content:"";flex:1;height:1px;background:var(--line)}
+.stack > * + *{margin-top:12px}
+.hero{text-align:center;padding:24px 0 8px}
+.hero .emoji{font-size:48px}
+.rules{font-size:14px;line-height:1.8;color:var(--sub);padding-left:1.2em;margin:8px 0 0}
+.code-big{font-size:44px;font-weight:900;letter-spacing:.18em;color:var(--accent2);text-align:center;margin:4px 0}
+.share{display:flex;gap:8px;align-items:center;background:var(--soft);border-radius:12px;padding:8px 10px;font-size:13px;word-break:break-all}
+.share span{flex:1}
+#qr{display:flex;justify-content:center;margin-top:12px}
+#qr img,#qr canvas{border:8px solid #fff;border-radius:8px;box-shadow:var(--shadow)}
+.plist{list-style:none;margin:0;padding:0}
+.plist li{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px dashed var(--line)}
+.plist li:last-child{border-bottom:none}
+.avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:800;color:#fff;flex-shrink:0;font-size:15px}
+.pname{flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--soft);color:var(--accent2);font-weight:700;white-space:nowrap}
+.tag.ok{background:#e3f8ef;color:var(--ok)} .tag.wait{background:#fff3dc;color:#b77800} .tag.p{background:#ffe8e1;color:var(--accent)}
+.score{font-weight:900;min-width:44px;text-align:right}
+.banner{border-radius:var(--radius);padding:14px 18px;color:#fff;font-weight:800;
+  background:linear-gradient(135deg,var(--accent),#ff9e6d);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.banner.purple{background:linear-gradient(135deg,var(--accent2),#a58bff)}
+.banner small{font-weight:600;opacity:.9}
+.topic{font-size:22px;font-weight:900;text-align:center;padding:18px 12px;border-radius:14px;
+  background:var(--soft);margin-bottom:16px;line-height:1.4}
+.topic .label{display:block;font-size:12px;color:var(--accent2);letter-spacing:.1em;margin-bottom:4px}
+/* ランキング入力 */
+.slots{display:grid;gap:8px}
+.slot{display:flex;align-items:center;gap:12px;border:2px dashed #d8cfe6;border-radius:14px;padding:10px 12px;
+  background:#fff;cursor:pointer;text-align:left;min-height:56px;width:100%}
+.slot.filled{border-style:solid;border-color:transparent;background:#fbf9ff;box-shadow:0 2px 0 #ece5f8}
+.slot.next{border-color:var(--accent2);background:#f7f4ff}
+.slot .val{flex:1;font-weight:700;font-size:16px}
+.slot .val.empty{color:#b5abc6;font-weight:500}
+.slot .x{color:#b5abc6;font-size:18px}
+.rk{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:15px;flex-shrink:0;background:#eeeaf5;color:#6a6080}
+.rk.r1{background:var(--gold);color:#6b4b00} .rk.r2{background:var(--silver);color:#3f4a5c} .rk.r3{background:var(--bronze);color:#5c3210}
+.pool-label{margin:16px 0 8px;font-size:13px;color:var(--sub);font-weight:700}
+.pool{display:flex;flex-wrap:wrap;gap:8px}
+.pool button{border:2px solid var(--accent2);background:#fff;color:var(--accent2);border-radius:999px;
+  padding:10px 16px;font-weight:800;font-size:15px;cursor:pointer}
+.pool button:active{background:var(--accent2);color:#fff}
+.actions{margin-top:18px;display:grid;gap:10px}
+@media (min-width:520px){.actions.two{grid-template-columns:1fr 2fr}}
+/* 結果 */
+.answer-list{display:grid;gap:8px}
+.ans{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:#fbf9ff;
+  opacity:0;animation:pop .45s ease forwards}
+.ans .val{font-weight:800;font-size:17px}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
+.res{border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:10px}
+.res-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.pts{font-weight:900;font-size:18px;color:var(--accent)}
+.pts.perfect{background:linear-gradient(90deg,#ff7a59,#7c5cff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.guess-row{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.g{border-radius:10px;padding:6px 4px;text-align:center;font-size:12px;font-weight:700;line-height:1.3;word-break:break-all}
+.g .n{display:block;font-size:11px;opacity:.75}
+.g.hit{background:#e3f8ef;color:#0f7a51} .g.miss{background:#fdeaec;color:#b3283a}
+.waiting{display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px 10px;text-align:center}
+.spinner{width:42px;height:42px;border-radius:50%;border:5px solid #eee6f8;border-top-color:var(--accent2);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.winner{text-align:center;padding:10px 0}
+.winner .crown{font-size:56px;animation:bounce 1.4s ease infinite}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.winner .wname{font-size:28px;font-weight:900}
+.pair{text-align:center;padding:18px;border-radius:14px;background:linear-gradient(135deg,#ffe8f0,#efe8ff);margin-top:8px}
+.pair .names{font-size:22px;font-weight:900}
+.pair .heart{color:#ff4f8b;margin:0 8px}
+details{margin-top:12px} summary{cursor:pointer;color:var(--sub);font-size:14px;font-weight:700}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#2b2340;color:#fff;
+  padding:12px 18px;border-radius:12px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:calc(100% - 32px);text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.modal-bg{position:fixed;inset:0;background:rgba(30,20,50,.45);display:flex;align-items:flex-end;justify-content:center;z-index:40}
+.modal{background:#fff;width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:20px;max-height:92vh;overflow:auto}
+@media (min-width:600px){.modal-bg{align-items:center}.modal{border-radius:20px}}
+.modal input{margin-bottom:8px;padding:11px}
+.progress{height:8px;background:#efe8f8;border-radius:999px;overflow:hidden;margin-top:8px}
+.progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s}
+.linkbtn{background:none;border:none;color:var(--sub);text-decoration:underline;cursor:pointer;font-size:13px;padding:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="logo">🏅 ランキング<b>予想</b></div>
+    <div class="spacer"></div>
+    <div id="hdr"></div>
+  </header>
+  <div id="app"></div>
+</div>
+<div id="toast" class="toast"></div>
+<div id="modal-root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+<script>
+(() => {
+'use strict';
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const COLORS = ['#ff7a59','#7c5cff','#1fb57a','#f5a524','#ef4b8b','#2fa4e7','#8c6a4f','#5c6bc0','#00a39b','#c0392b','#9b59b6','#e67e22'];
+const STORE = 'rankgame.session';
+
+let S = null;          // サーバーから届いた自分用の状態
+let es = null;         // EventSource
+let connected = false;
+let busy = false;
+let info = { lanUrls: [] };
+const ui = { draft: [null,null,null,null,null], key: '' };
+const last = { hdr: null, app: null };
+
+// ---------- セッション ----------
+const loadSess = () => { try { return JSON.parse(localStorage.getItem(STORE)) || null; } catch { return null; } };
+const saveSess = (s) => { try { localStorage.setItem(STORE, JSON.stringify(s)); } catch {} };
+const clearSess = () => { try { localStorage.removeItem(STORE); } catch {} };
+let sess = loadSess();
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+async function post(url, body) {
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error || 'エラーが発生しました'); return null; }
+    return j;
+  } catch { toast('通信できませんでした。接続を確認してください'); return null; }
+}
+async function act(type, extra = {}) {
+  if (busy) return null;
+  busy = true;
+  try { return await post('/api/action', { code: sess.code, token: sess.token, type, ...extra }); }
+  finally { busy = false; }
+}
+
+// ---------- リアルタイム接続 ----------
+function connect() {
+  if (es) es.close();
+  es = new EventSource(`/api/events?code=${encodeURIComponent(sess.code)}&token=${encodeURIComponent(sess.token)}`);
+  es.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.error) { es.close(); es = null; clearSess(); sess = null; S = null; toast(d.error); goHome(); return; }
+    connected = true; S = d; render();
+  };
+  es.onerror = () => { connected = false; renderHeader(); };
+  history.replaceState(null, '', `?room=${sess.code}`);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && sess && (!es || es.readyState === 2)) connect();
+});
+
+// ---------- ヘルパー ----------
+const P = (id) => S.players.find((p) => p.id === id) || { name: '(退出)', id };
+const nameOf = (id) => P(id).name;
+const colorOf = (id) => COLORS[Math.max(0, S.players.findIndex((p) => p.id === id)) % COLORS.length];
+const avatar = (id) => `<span class="avatar" style="background:${colorOf(id)}">${esc([...nameOf(id)][0] || '?')}</span>`;
+const isHost = () => S.hostId === S.me;
+const rk = (i) => `<span class="rk r${i + 1}">${i + 1}位</span>`;
+function shareUrl() {
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+  const base = local && info.lanUrls[0] ? info.lanUrls[0] : location.origin;
+  return `${base}/?room=${S.code}`;
+}
+
+// ---------- 描画 ----------
+function setHtml(el, key, html) { if (last[key] !== html) { el.innerHTML = html; last[key] = html; } }
+
+function renderHeader() {
+  const h = !S ? '' :
+    `<span class="chip"><span class="dot ${connected ? '' : 'off'}"></span>ルーム <b>${esc(S.code)}</b></span>`;
+  setHtml($('#hdr'), 'hdr', h);
+}
+
+function render() {
+  if (!S) return;
+  renderHeader();
+  const k = `${S.phase}|${S.roundNum}|${S.round?.topic}|${(S.round?.choices || []).join('/')}`;
+  if (k !== ui.key) { ui.key = k; ui.draft = [null,null,null,null,null]; }
+  if (S.phase !== ui.phase) { ui.phase = S.phase; window.scrollTo({ top: 0 }); }
+
+  let main = '';
+  switch (S.phase) {
+    case 'lobby': main = viewLobby(); break;
+    case 'ranking': main = viewRanking(); break;
+    case 'guessing': main = viewGuessing(); break;
+    case 'reveal': main = viewReveal(); break;
+    case 'final': main = viewFinal(); break;
+  }
+  setHtml($('#app'), 'app', main);
+  if (S.phase === 'lobby') drawQr();
+}
+
+function drawQr() {
+  const el = $('#qr');
+  if (!el || el.dataset.url === shareUrl() || !window.QRCode) return;
+  el.innerHTML = ''; el.dataset.url = shareUrl();
+  try { new QRCode(el, { text: shareUrl(), width: 148, height: 148, correctLevel: QRCode.CorrectLevel.M }); } catch {}
+}
+
+// ホーム（入室前）
+function goHome() {
+  last.app = null; last.hdr = null; renderHeaderEmpty();
+  const roomParam = new URLSearchParams(location.search).get('room') || '';
+  const joinFirst = !!roomParam;
+  const joinBlock = `
+    <h3>${joinFirst ? `ルーム <span style="color:var(--accent2)">${esc(roomParam)}</span> に参加` : 'ルームに参加する'}</h3>
+    <div class="stack">
+      <div ${joinFirst ? 'style="display:none"' : ''}><label for="code">ルーム番号（4桁）</label>
+        <input id="code" type="tel" inputmode="numeric" maxlength="4" placeholder="例: 1234" value="${esc(roomParam)}"></div>
+      <button class="btn purple" data-act="join">参加する</button>
+    </div>`;
+  const createBlock = `
+    <h3>ルームを作る（部屋主になる）</h3>
+    <button class="btn" data-act="create">新しいルームを作る</button>`;
+  $('#app').innerHTML = `
+    <div class="hero"><div class="emoji">🥇🥈🥉</div><h1>ランキング予想ゲーム</h1>
+      <p class="muted">出題者の「好きな順」を当てて、みんなの価値観を知ろう！</p></div>
+    <div class="card" style="max-width:520px;margin:0 auto">
+      <div class="stack" style="margin-bottom:18px">
+        <label for="name">ニックネーム</label>
+        <input id="name" type="text" maxlength="12" placeholder="例: たろう" autocomplete="nickname">
+      </div>
+      ${joinFirst ? joinBlock : createBlock}
+      <div class="or">または</div>
+      ${joinFirst ? createBlock : joinBlock}
+    </div>
+    <div class="card" style="max-width:520px;margin:16px auto 0">
+      <h3>遊び方</h3>
+      <ol class="rules">
+        <li>部屋主がルームを作り、リンクか番号を友達に送る</li>
+        <li>出題者がお題の5つの選択肢を自分の好みで1〜5位に並べる</li>
+        <li>ほかの人は出題者のランキングを予想する</li>
+        <li>1つ当たるごとに<b>1pt</b>、全部当てたら<b>7pt</b>！</li>
+        <li>全員が1回ずつ出題したら終了。優勝者と<b>相性No.1ペア</b>を発表</li>
+      </ol>
+    </div>`;
+  try { const n = localStorage.getItem('rankgame.name'); if (n) $('#name').value = n; } catch {}
+}
+function renderHeaderEmpty() { $('#hdr').innerHTML = ''; }
+
+function playerList(mode) {
+  const r = S.round;
+  const items = S.players.slice();
+  if (mode === 'score') items.sort((a, b) => b.score - a.score);
+  return `<ul class="plist">${items.map((p) => {
+    let tag = '';
+    if (mode === 'lobby') {
+      tag = p.id === S.hostId ? '<span class="tag">👑 部屋主</span>' : '';
+      if (isHost() && p.id !== S.me) tag += `<button class="linkbtn" data-act="kick" data-id="${p.id}">退出させる</button>`;
+    } else if (r) {
+      if (p.id === r.presenterId) tag = '<span class="tag p">🎤 出題者</span>';
+      else if (S.phase === 'guessing') tag = r.answered.includes(p.id) ? '<span class="tag ok">✓ 回答済み</span>' : '<span class="tag wait">考え中…</span>';
+    }
+    const me = p.id === S.me ? ' <span class="muted">(あなた)</span>' : '';
+    return `<li>${avatar(p.id)}<span class="pname">${esc(p.name)}${me}</span>${p.online ? '' : '<span class="tag wait">オフライン</span>'}${tag}
+      ${mode !== 'lobby' ? `<span class="score">${p.score}pt</span>` : ''}</li>`;
+  }).join('')}</ul>`;
+}
+
+function sidePanel() {
+  return `<aside class="card"><h3>スコア</h3>${playerList('score')}</aside>`;
+}
+
+function roundBanner(extra = '') {
+  const r = S.round;
+  const mine = r.presenterId === S.me;
+  return `<div class="banner ${mine ? '' : 'purple'}">
+    <span>ラウンド ${S.roundNum} / ${S.roundTotal}</span><span class="spacer"></span>
+    <small>出題者：${esc(nameOf(r.presenterId))}${mine ? '（あなた）' : ''}</small>${extra}</div>`;
+}
+
+function viewLobby() {
+  const n = S.players.length;
+  return `<div class="layout two">
+    <section class="card center">
+      <h2>参加者を集めよう！</h2>
+      <p class="muted">このルーム番号かリンクを友達に共有してください</p>
+      <div class="code-big">${esc(S.code)}</div>
+      <div class="share"><span>${esc(shareUrl())}</span>
+        <button class="btn small purple" data-act="copy">コピー</button>
+        ${navigator.share ? '<button class="btn small ghost" data-act="share">共有</button>' : ''}</div>
+      <div id="qr"></div>
+      <p class="muted" style="margin-top:8px">スマホのカメラでQRを読み取っても参加できます</p>
+    </section>
+    <aside class="card">
+      <h3>参加者（${n}人）</h3>
+      ${playerList('lobby')}
+      <div class="actions">
+        ${isHost()
+          ? `<button class="btn" data-act="start" ${n < 2 ? 'disabled' : ''}>${n < 2 ? 'あと1人以上で開始できます' : `ゲーム開始（${n}人）`}</button>`
+          : '<div class="waiting" style="padding:10px"><div class="spinner"></div><div class="muted">部屋主がゲームを開始するのを待っています</div></div>'}
+        <button class="btn ghost small" style="width:100%" data-act="leave">ルームから退出</button>
+      </div>
+    </aside></div>`;
+}
+
+function ranker(submitLabel) {
+  const ch = S.round.choices;
+  const used = new Set(ui.draft.filter((x) => x !== null));
+  const nextIdx = ui.draft.indexOf(null);
+  const slots = ui.draft.map((c, i) => `
+    <button class="slot ${c !== null ? 'filled' : ''} ${i === nextIdx ? 'next' : ''}" data-act="unslot" data-i="${i}">
+      ${rk(i)}<span class="val ${c === null ? 'empty' : ''}">${c === null ? (i === nextIdx ? '← 下から選んでください' : '—') : esc(ch[c])}</span>
+      ${c !== null ? '<span class="x">✕</span>' : ''}</button>`).join('');
+  const pool = ch.map((c, i) => used.has(i) ? '' : `<button data-act="pick" data-i="${i}">${esc(c)}</button>`).join('');
+  const done = nextIdx === -1;
+  return `<div class="slots">${slots}</div>
+    ${done ? '<p class="pool-label">✓ 5つとも並べました。タップすると外せます</p>'
+           : `<p class="pool-label">選択肢をタップして <b>${nextIdx + 1}位</b> に入れよう</p><div class="pool">${pool}</div>`}
+    <div class="actions two">
+      <button class="btn ghost" data-act="clearDraft">やり直す</button>
+      <button class="btn ${S.phase === 'ranking' ? '' : 'purple'}" data-act="submitRank" ${done ? '' : 'disabled'}>${submitLabel}</button>
+    </div>`;
+}
+
+function topicBox(r) { return `<div class="topic"><span class="label">お題</span>${esc(r.topic)}</div>`; }
+
+function viewRanking() {
+  const r = S.round;
+  let body;
+  if (r.presenterId === S.me) {
+    body = `<section class="card">
+      <h2>🎤 あなたが出題者です</h2>
+      <p class="muted">あなたの好みで1位〜5位を決めてください。みんながそれを予想します。</p>
+      ${topicBox(r)}
+      <div class="row" style="margin-bottom:16px">
+        <button class="btn ghost small" data-act="reroll">🎲 お題を変える</button>
+        <button class="btn ghost small" data-act="custom">✏️ 自分でお題を作る</button>
+      </div>
+      ${ranker('このランキングで決定！')}
+    </section>`;
+  } else {
+    body = `<section class="card"><div class="waiting">
+      <div class="spinner"></div>
+      <h2 style="margin:0">${esc(nameOf(r.presenterId))}さんがランキングを作成中…</h2>
+      <p class="muted">お題が決まったら予想スタート！ どんなランキングにするか想像しておこう</p>
+      ${isHost() ? '<button class="linkbtn" data-act="skipRound">出題者が応答しない場合：この出題をスキップ</button>' : ''}
+    </div></section>`;
+  }
+  return `${roundBanner()}<div class="layout two" style="margin-top:16px"><div>${body}</div>${sidePanel()}</div>`;
+}
+
+function listRanking(order, choices) {
+  return `<div class="answer-list">${order.map((c, i) => `<div class="ans" style="animation-delay:0s;opacity:1">${rk(i)}<span class="val">${esc(choices[c])}</span></div>`).join('')}</div>`;
+}
+
+function progressBox(r) {
+  const total = r.guessers.length, done = r.answered.length;
+  const missing = r.guessers.filter((id) => !r.answered.includes(id));
+  return `<div class="card">
+    <h3>回答状況 ${done} / ${total}</h3>
+    <div class="progress"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div>
+    ${missing.length ? `<p class="muted">まだの人：${missing.map((id) => esc(nameOf(id))).join('、')}</p>` : ''}
+    ${isHost() && missing.length ? '<button class="linkbtn" data-act="forceReveal">未回答の人を待たずに答え合わせする</button>' : ''}
+  </div>`;
+}
+
+function viewGuessing() {
+  const r = S.round;
+  const pName = esc(nameOf(r.presenterId));
+  let body;
+  if (r.presenterId === S.me) {
+    body = `<section class="card"><h2>みんなが予想中です…</h2>
+      ${topicBox(r)}<p class="muted">あなたのランキング（あなたにだけ表示されています）</p>
+      ${listRanking(r.answer, r.choices)}</section>`;
+  } else if (r.myGuess) {
+    body = `<section class="card"><h2>✓ 予想を送信しました</h2>
+      ${topicBox(r)}<p class="muted">あなたの予想</p>${listRanking(r.myGuess, r.choices)}
+      <div class="waiting" style="padding:16px 0 0"><div class="spinner"></div><div class="muted">全員の予想がそろうと答え合わせ！</div></div></section>`;
+  } else {
+    body = `<section class="card">
+      <h2>🤔 ${pName}さんのランキングを予想しよう！</h2>
+      <p class="muted">${pName}さんが選んだ1位〜5位を当ててください（送信後は変更できません）</p>
+      ${topicBox(r)}${ranker('この予想で送信！')}</section>`;
+  }
+  return `${roundBanner()}<div class="layout two" style="margin-top:16px"><div>${body}<div style="margin-top:16px">${progressBox(r)}</div></div>${sidePanel()}</div>`;
+}
+
+function viewReveal() {
+  const r = S.round;
+  const n = r.answer.length;
+  const answer = r.answer.map((c, i) => `<div class="ans" style="animation-delay:${(n - 1 - i) * 0.35}s">${rk(i)}<span class="val">${esc(r.choices[c])}</span></div>`).join('');
+  const results = r.results.slice().sort((a, b) => b.points - a.points).map((x) => {
+    const perfect = x.count === 5;
+    const row = x.guess
+      ? `<div class="guess-row">${x.guess.map((c, i) => `<div class="g ${x.hits[i] ? 'hit' : 'miss'}"><span class="n">${i + 1}位 ${x.hits[i] ? '○' : '×'}</span>${esc(r.choices[c])}</div>`).join('')}</div>`
+      : '<p class="muted" style="margin:0">未回答（0pt）</p>';
+    return `<div class="res"><div class="res-head">${avatar(x.id)}<span class="pname">${esc(nameOf(x.id))}${x.id === S.me ? ' <span class="muted">(あなた)</span>' : ''}</span>
+      <span class="muted">${x.guess ? `${x.count}個的中` : ''}</span><span class="pts ${perfect ? 'perfect' : ''}">${perfect ? '🎉 PERFECT +7' : `+${x.points}`}</span></div>${row}</div>`;
+  }).join('');
+  const canNext = isHost() || r.presenterId === S.me;
+  const lastRound = S.roundNum >= S.roundTotal;
+  const nextBtn = canNext
+    ? `<button class="btn" data-act="next">${lastRound ? '🏆 最終結果を見る' : '次のラウンドへ ▶'}</button>`
+    : `<p class="muted center">部屋主か出題者が次へ進めるのを待っています…</p>`;
+  return `${roundBanner()}<div class="layout two" style="margin-top:16px"><div>
+    <section class="card"><h2>📣 正解発表！</h2>${topicBox(r)}
+      <p class="muted">${esc(nameOf(r.presenterId))}さんのランキング</p><div class="answer-list">${answer}</div></section>
+    <section class="card"><h2>みんなの予想</h2>${results || '<p class="muted">予想した人はいません</p>'}</section>
+    <div class="actions">${nextBtn}</div>
+  </div>${sidePanel()}</div>`;
+}
+
+function viewFinal() {
+  const f = S.final;
+  const winners = f.ranking.filter((x) => x.rank === 1);
+  const medal = (rank) => rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `${rank}位`;
+  const ranking = `<ul class="plist">${f.ranking.map((x) => `<li><span style="width:36px;text-align:center;font-weight:900">${medal(x.rank)}</span>
+    ${avatar(x.id)}<span class="pname">${esc(nameOf(x.id))}${x.id === S.me ? ' <span class="muted">(あなた)</span>' : ''}</span><span class="score">${x.score}pt</span></li>`).join('')}</ul>`;
+  const pairBlock = f.best.length
+    ? f.best.map((p) => `<div class="pair"><div class="names">${esc(nameOf(p.a))}<span class="heart">♥</span>${esc(nameOf(p.b))}</div>
+        <div class="muted" style="margin-top:6px">お互いのランキングを合計 <b>${p.total}個</b> 的中！<br>
+        （${esc(nameOf(p.a))}→${esc(nameOf(p.b))}：${p.ab}個 ／ ${esc(nameOf(p.b))}→${esc(nameOf(p.a))}：${p.ba}個）</div></div>`).join('')
+    : '<p class="muted">今回は該当ペアなし…お互いをもっと知ろう！</p>';
+  const allPairs = `<details><summary>すべてのペアの相性を見る</summary><ul class="plist">${f.pairs.map((p) =>
+    `<li><span class="pname">${esc(nameOf(p.a))} × ${esc(nameOf(p.b))}</span><span class="score">${p.total}個</span></li>`).join('')}</ul></details>`;
+  return `<div class="layout">
+    <section class="card"><div class="winner"><div class="crown">👑</div>
+      <div class="muted">優勝${winners.length > 1 ? '（同点）' : ''}</div>
+      <div class="wname">${winners.map((w) => esc(nameOf(w.id))).join('・')}</div>
+      <div class="muted">${winners[0]?.score ?? 0}pt</div></div></section>
+    <div class="layout eq">
+      <section class="card"><h2>🏅 個人ランキング</h2>${ranking}</section>
+      <section class="card"><h2>💞 相性No.1ペア</h2>${pairBlock}${f.pairs.length > 1 ? allPairs : ''}</section>
+    </div>
+    <div class="actions">
+      ${isHost() ? '<button class="btn" data-act="replay">🔁 同じメンバーでもう一度遊ぶ</button>'
+                 : '<p class="muted center">部屋主が再戦を始めると、このまま次のゲームに参加できます</p>'}
+      <button class="btn ghost" data-act="leave">ルームから退出してトップへ</button>
+    </div></div>`;
+}
+
+// ---------- お題作成モーダル ----------
+function openCustom() {
+  const root = $('#modal-root');
+  root.innerHTML = `<div class="modal-bg" data-act="closeModal"><div class="modal" onclick="event.stopPropagation()">
+    <h2>✏️ 自分でお題を作る</h2>
+    <label>お題</label><input type="text" id="c-topic" maxlength="30" placeholder="例: 好きな〇〇">
+    <label style="margin-top:8px">選択肢（5個）</label>
+    ${[1,2,3,4,5].map((i) => `<input type="text" class="c-ch" maxlength="20" placeholder="選択肢${i}">`).join('')}
+    <div class="actions two"><button class="btn ghost" data-act="closeModal">キャンセル</button>
+      <button class="btn purple" data-act="saveCustom">このお題にする</button></div></div></div>`;
+  $('#c-topic').focus();
+}
+const closeModal = () => { $('#modal-root').innerHTML = ''; };
+
+// ---------- 操作 ----------
+const handlers = {
+  async create() {
+    const name = $('#name').value.trim();
+    if (!name) { toast('ニックネームを入力してください'); $('#name').focus(); return; }
+    const j = await post('/api/create', { name });
+    if (j) enter(j, name);
+  },
+  async join() {
+    const name = $('#name').value.trim();
+    const code = $('#code').value.trim();
+    if (!name) { toast('ニックネームを入力してください'); $('#name').focus(); return; }
+    if (!/^\d{4}$/.test(code)) { toast('4桁のルーム番号を入力してください'); $('#code').focus(); return; }
+    const j = await post('/api/join', { name, code });
+    if (j) enter(j, name);
+  },
+  async copy() {
+    try { await navigator.clipboard.writeText(shareUrl()); toast('リンクをコピーしました'); }
+    catch { prompt('このリンクをコピーしてください', shareUrl()); }
+  },
+  share() { navigator.share({ title: 'ランキング予想ゲーム', text: `ルーム番号 ${S.code} で一緒に遊ぼう！`, url: shareUrl() }).catch(() => {}); },
+  start: () => act('start'),
+  kick: (el) => { if (confirm(`${nameOf(el.dataset.id)}さんを退出させますか？`)) act('kick', { id: el.dataset.id }); },
+  async leave() {
+    if (!confirm('ルームから退出しますか？')) return;
+    const j = await act('leave');
+    if (!j) return;
+    if (es) es.close(); es = null; clearSess(); sess = null; S = null;
+    history.replaceState(null, '', location.pathname); goHome();
+  },
+  reroll: () => act('reroll'),
+  custom: openCustom,
+  closeModal,
+  async saveCustom() {
+    const topic = $('#c-topic').value.trim();
+    const choices = [...document.querySelectorAll('.c-ch')].map((i) => i.value.trim());
+    if (!topic) return toast('お題を入力してください');
+    if (choices.some((c) => !c)) return toast('選択肢を5個すべて入力してください');
+    if (new Set(choices).size !== 5) return toast('選択肢が重複しています');
+    if (await act('custom', { topic, choices })) closeModal();
+  },
+  pick(el) {
+    const i = Number(el.dataset.i), slot = ui.draft.indexOf(null);
+    if (slot === -1 || ui.draft.includes(i)) return;
+    ui.draft[slot] = i; render();
+  },
+  unslot(el) { const i = Number(el.dataset.i); if (ui.draft[i] !== null) { ui.draft[i] = null; render(); } },
+  clearDraft() { ui.draft = [null,null,null,null,null]; render(); },
+  async submitRank(el) {
+    if (ui.draft.includes(null)) return toast('1位〜5位をすべて埋めてください');
+    el.disabled = true;
+    const ok = await act('submitRanking', { order: ui.draft.slice() });
+    if (!ok) el.disabled = false;
+  },
+  forceReveal: () => { if (confirm('未回答の人は0ptになります。答え合わせしますか？')) act('forceReveal'); },
+  skipRound: () => { if (confirm(`${nameOf(S.round.presenterId)}さんの出題をスキップしますか？`)) act('skipRound'); },
+  next: () => act('next'),
+  replay: () => { if (confirm('ポイントと相性をリセットして、同じメンバーで新しいゲームを始めますか？')) act('replay'); },
+};
+
+function enter(j, name) {
+  try { localStorage.setItem('rankgame.name', name); } catch {}
+  sess = { code: j.code, token: j.token }; saveSess(sess);
+  last.app = null; connect();
+}
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (!el || el.disabled) return;
+  if (el.classList.contains('modal-bg') && e.target !== el) return;
+  const h = handlers[el.dataset.act];
+  if (h) { e.preventDefault(); h(el); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || !e.target.matches('#name, #code')) return;
+  const roomParam = new URLSearchParams(location.search).get('room');
+  (roomParam || e.target.id === 'code' ? handlers.join : handlers.create)();
+});
+
+// ---------- 起動 ----------
+fetch('/api/info').then((r) => r.json()).then((j) => { info = j; if (S) { last.app = null; render(); } }).catch(() => {});
+window.addEventListener('load', () => { if (S && S.phase === 'lobby') drawQr(); });
+const roomParam = new URLSearchParams(location.search).get('room');
+if (sess && (!roomParam || roomParam === sess.code)) connect();
+else { if (sess) { clearSess(); sess = null; } goHome(); }
+})();
+</script>
+</body>
+</html>

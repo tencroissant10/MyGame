@@ -131,6 +131,13 @@ details{margin-top:12px} summary{cursor:pointer;color:var(--sub);font-size:14px;
 .progress{height:8px;background:#efe8f8;border-radius:999px;overflow:hidden;margin-top:8px}
 .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s}
 #hdr{display:flex;align-items:center;gap:6px}
+.genre-box{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+.genres{display:flex;flex-wrap:wrap;gap:8px}
+.genre{border:2px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;font-weight:800;font-size:14px;cursor:pointer;color:var(--ink)}
+.genre small{margin-left:6px;font-size:11px;color:var(--sub);font-weight:700}
+.genre.on{background:var(--accent2);border-color:var(--accent2);color:#fff}
+.genre.on small{color:#e6deff}
+.genre-now{font-weight:800;font-size:16px;margin:0}
 .logo,.chip{white-space:nowrap}
 @media (max-width:420px){ .logo{font-size:15px} .chip{padding:4px 8px;font-size:12px} .endbtn{padding:4px 8px} }
 .endbtn{border:1.5px solid var(--ng);background:#fff;color:var(--ng);border-radius:999px;padding:4px 10px;
@@ -337,6 +344,20 @@ function roundBanner(extra = '') {
     <small>出題者：${esc(nameOf(r.presenterId))}${mine ? '（あなた）' : ''}</small>${extra}</div>`;
 }
 
+const genreLabel = (g) => g === 'all' ? 'すべてのジャンル' : g;
+
+function genrePicker() {
+  const opts = [{ name: 'all', count: S.genres.reduce((s, g) => s + g.count, 0) }, ...S.genres];
+  if (!isHost()) {
+    return `<div class="genre-box"><h3>お題のジャンル</h3><p class="genre-now">📚 ${esc(genreLabel(S.genre))}</p>
+      <p class="muted" style="margin:4px 0 0">部屋主が選びます</p></div>`;
+  }
+  return `<div class="genre-box"><h3>お題のジャンル</h3>
+    <div class="genres">${opts.map((g) => `<button class="genre ${g.name === S.genre ? 'on' : ''}" data-act="setGenre" data-genre="${esc(g.name)}">
+      ${esc(g.name === 'all' ? 'すべて' : g.name)}<small>${g.count}</small></button>`).join('')}</div>
+    <p class="muted" style="margin:6px 0 0">${S.genre === 'all' ? '全ジャンルからランダムに出題します' : `「${esc(S.genre)}」のお題だけが出題されます`}</p></div>`;
+}
+
 function viewLobby() {
   const n = S.players.length;
   return `<div class="layout two">
@@ -353,6 +374,7 @@ function viewLobby() {
     <aside class="card">
       <h3>参加者（${n}人）</h3>
       ${playerList('lobby')}
+      ${genrePicker()}
       <div class="actions">
         ${isHost()
           ? `<button class="btn" data-act="start" ${n < 2 ? 'disabled' : ''}>${n < 2 ? 'あと1人以上で開始できます' : `ゲーム開始（${n}人）`}</button>`
@@ -414,7 +436,7 @@ function viewRanking() {
     ${missing.length ? `<p class="muted">作成中：${missing.map((id) => esc(nameOf(id))).join('、')}</p>` : ''}
     ${isHost() && missing.length && done ? '<button class="linkbtn" data-act="forceStartGuessing">作成中の人を待たずに予想タイムを始める</button>' : ''}
   </div>`;
-  const banner = `<div class="banner"><span>ランキング作成タイム</span><span class="spacer"></span><small>全員で同時に作成中</small></div>`;
+  const banner = `<div class="banner"><span>ランキング作成タイム</span><span class="spacer"></span><small>📚 ${esc(genreLabel(S.genre))}</small></div>`;
   return `${banner}<div class="layout two" style="margin-top:16px"><div>${body}<div style="margin-top:16px">${progress}</div></div>${sidePanel()}</div>`;
 }
 
@@ -579,6 +601,7 @@ const handlers = {
   forceReveal: () => { if (confirm('未回答の人は0ptになります。答え合わせしますか？')) act('forceReveal'); },
   forceStartGuessing: () => { if (confirm('作成中の人のお題は出題されません。予想タイムを始めますか？')) act('forceStartGuessing'); },
   unsubmit: () => act('unsubmit'),
+  setGenre: (el) => { if (el.dataset.genre !== S.genre) act('setGenre', { genre: el.dataset.genre }); },
   closeRoom: () => {
     if (confirm('ゲームを強制終了して、全員を参加前の画面に戻しますか？\n（ルームは解散され、得点は消えます）')) act('closeRoom');
   },

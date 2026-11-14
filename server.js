@@ -8,7 +8,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const TOPICS = require('./topics');
+const GENRES = require('./topics');
+// 全ジャンルのお題を1つのリストにまとめる
+const TOPICS = GENRES.flatMap((g) => g.topics.map(([topic, choices]) => ({ genre: g.genre, topic, choices })));
+const GENRE_LIST = GENRES.map((g) => ({ name: g.genre, count: g.topics.length }));
+const ALL = 'all'; // 全ジャンルから出題
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -47,7 +51,7 @@ function isValidOrder(order) {
 function createRoom() {
   const code = newRoomCode();
   if (!code) return null;
-  const room = { code, hostId: null, players: [], phase: 'lobby', game: null, touched: Date.now() };
+  const room = { code, hostId: null, players: [], phase: 'lobby', genre: ALL, game: null, touched: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -83,12 +87,13 @@ function startGame(room) {
     idx: 0,
     scores: Object.fromEntries(members.map((id) => [id, 0])),
     correct, // correct[a][b] = a が b のランキングを当てた個数
+    genre: room.genre, // 出題ジャンル（'all' なら全ジャンル）
     usedTopics: new Set(),
     sheets: {}, // 各自のお題とランキング { topic, choices, answer }
     round: null,
   };
   // 全員に別々のお題を配り、同時にランキングを作ってもらう
-  for (const id of members) room.game.sheets[id] = { ...pickTopic(room.game), answer: null };
+  for (const id of members) room.game.sheets[id] = { ...pickTopic(room.game, true), answer: null };
   room.phase = 'ranking';
 }
 
@@ -100,12 +105,24 @@ function beginGuessing(room) {
   beginRound(room);
 }
 
-function pickTopic(game) {
-  if (game.usedTopics.size >= TOPICS.length) game.usedTopics.clear();
-  const unused = TOPICS.map((_, i) => i).filter((i) => !game.usedTopics.has(i));
-  const i = unused[crypto.randomInt(unused.length)];
+// 選択中のジャンルから、まだ使っていないお題を1つ選ぶ
+// 他の人が持っているお題とは重ならないようにする。選べるお題がなければ null
+function pickTopic(game, allowDuplicate = false) {
+  const pool = TOPICS.map((_, i) => i).filter((i) => game.genre === ALL || TOPICS[i].genre === game.genre);
+  const inUse = new Set(Object.values(game.sheets).map((s) => s.topic));
+  let candidates = pool.filter((i) => !game.usedTopics.has(i) && !inUse.has(TOPICS[i].topic));
+  if (!candidates.length) {
+    // 一度出たお題を使い切ったら、いま誰も持っていないお題からもう一度選ぶ
+    for (const i of pool) game.usedTopics.delete(i);
+    candidates = pool.filter((i) => !inUse.has(TOPICS[i].topic));
+  }
+  if (!candidates.length) {
+    if (!allowDuplicate) return null;
+    candidates = pool; // 人数がジャンルのお題数より多い場合のみ重複を許す
+  }
+  const i = candidates[crypto.randomInt(candidates.length)];
   game.usedTopics.add(i);
-  return { topic: TOPICS[i][0], choices: shuffle(TOPICS[i][1]) };
+  return { topic: TOPICS[i].topic, choices: shuffle(TOPICS[i].choices) };
 }
 
 function beginRound(room) {
@@ -167,6 +184,8 @@ function viewFor(room, me) {
     me: me.id,
     hostId: room.hostId,
     phase: room.phase,
+    genre: room.genre,
+    genres: GENRE_LIST,
     players: room.players.map((p) => ({ id: p.id, name: p.name, online: online(p), score: g ? g.scores[p.id] ?? 0 : 0 })),
   };
   if (g && room.phase === 'ranking') {
@@ -220,6 +239,13 @@ function handleAction(room, me, body) {
       startGame(room);
       return null;
 
+    case 'setGenre':
+      if (!isHost) return '部屋主だけがジャンルを選べます';
+      if (room.phase !== 'lobby') return 'ジャンルはゲーム開始前に選んでください';
+      if (body.genre !== ALL && !GENRE_LIST.some((g) => g.name === body.genre)) return 'そのジャンルはありません';
+      room.genre = body.genre;
+      return null;
+
     case 'kick': {
       if (!isHost) return '部屋主だけが操作できます';
       if (room.phase !== 'lobby') return 'ゲーム中は退出させられません';
@@ -239,8 +265,12 @@ function handleAction(room, me, body) {
 
     case 'reroll':
       if (room.phase !== 'ranking' || !mySheet || mySheet.answer) return 'いまはお題を変更できません';
-      Object.assign(mySheet, pickTopic(g));
+    {
+      const picked = pickTopic(g);
+      if (!picked) return 'このジャンルには、ほかに使えるお題がありません';
+      Object.assign(mySheet, picked);
       return null;
+    }
 
     case 'custom': {
       if (room.phase !== 'ranking' || !mySheet || mySheet.answer) return 'いまはお題を変更できません';

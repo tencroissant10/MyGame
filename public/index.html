@@ -143,6 +143,15 @@ details{margin-top:12px} summary{cursor:pointer;color:var(--sub);font-size:14px;
 .endbtn{border:1.5px solid var(--ng);background:#fff;color:var(--ng);border-radius:999px;padding:4px 10px;
   font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
 .endbtn:active{background:var(--ng);color:#fff}
+.modes{display:grid;gap:8px}
+.mode{display:block;width:100%;text-align:left;border:2px solid var(--line);background:#fff;border-radius:14px;padding:10px 12px;cursor:pointer;color:var(--ink)}
+.mode b{display:block;font-size:15px}
+.mode span{display:block;font-size:12px;color:var(--sub);margin-top:2px;line-height:1.5}
+.mode.on{border-color:var(--accent2);background:#f7f4ff}
+.mode.on b{color:var(--accent2)}
+.author{display:block;font-size:12px;color:var(--sub);font-weight:700;margin-top:6px;letter-spacing:0}
+.wform input{margin-bottom:8px}
+.wform .chs{display:grid;gap:0}
 .linkbtn{background:none;border:none;color:var(--sub);text-decoration:underline;cursor:pointer;font-size:13px;padding:4px}
 </style>
 </head>
@@ -171,7 +180,7 @@ let es = null;         // EventSource
 let connected = false;
 let busy = false;
 let info = { lanUrls: [] };
-const ui = { draft: [null,null,null,null,null], key: '' };
+const ui = { draft: [null,null,null,null,null], key: '', write: { topic: '', choices: ['', '', '', '', ''] } };
 const last = { hdr: null, app: null };
 
 // ---------- セッション ----------
@@ -249,17 +258,29 @@ function render() {
   const t = S.mySheet || S.round;
   const k = `${S.phase}|${S.roundNum}|${t?.topic}|${(t?.choices || []).join('/')}|${S.mySheet?.answer ? 1 : 0}`;
   if (k !== ui.key) { ui.key = k; ui.draft = [null,null,null,null,null]; }
-  if (S.phase !== ui.phase) { ui.phase = S.phase; window.scrollTo({ top: 0 }); }
+  if (S.phase !== ui.phase) {
+    if (S.phase === 'writing' && ui.phase !== undefined) ui.write = { topic: '', choices: ['', '', '', '', ''] };
+    ui.phase = S.phase; window.scrollTo({ top: 0 });
+  }
+
+  // 入力中の欄は再描画してもフォーカスとカーソル位置を保つ
+  const a = document.activeElement;
+  const keep = a && a.dataset && a.dataset.w ? { w: a.dataset.w, s: a.selectionStart, e: a.selectionEnd } : null;
 
   let main = '';
   switch (S.phase) {
     case 'lobby': main = viewLobby(); break;
+    case 'writing': main = viewWriting(); break;
     case 'ranking': main = viewRanking(); break;
     case 'guessing': main = viewGuessing(); break;
     case 'reveal': main = viewReveal(); break;
     case 'final': main = viewFinal(); break;
   }
   setHtml($('#app'), 'app', main);
+  if (keep && document.activeElement !== a) {
+    const el = document.querySelector(`[data-w="${keep.w}"]`);
+    if (el) { el.focus(); try { el.setSelectionRange(keep.s, keep.e); } catch {} }
+  }
   if (S.phase === 'lobby') drawQr();
 }
 
@@ -303,6 +324,7 @@ function goHome() {
         <li>部屋主がルームを作り、リンクか番号を友達に送る</li>
         <li>全員が同時に、それぞれ別のお題で5つの選択肢を好きな順に1〜5位に並べる</li>
         <li>1人ずつ順番に出題。ほかの人はその人のランキングを予想して答え合わせ</li>
+        <li>「お題交換」モードでは、最初に全員がお題を作り、シャッフルしてほかの人に配ります</li>
         <li>1つ当たるごとに<b>1pt</b>、全部当てたら<b>7pt</b>！</li>
         <li>全員分の答え合わせが終わったら、優勝者と<b>相性No.1ペア</b>を発表</li>
       </ol>
@@ -320,7 +342,7 @@ function playerList(mode) {
     if (mode === 'lobby') {
       tag = p.id === S.hostId ? '<span class="tag">👑 部屋主</span>' : '';
       if (isHost() && p.id !== S.me) tag += `<button class="linkbtn" data-act="kick" data-id="${p.id}">退出させる</button>`;
-    } else if (S.phase === 'ranking') {
+    } else if (S.phase === 'ranking' || S.phase === 'writing') {
       tag = S.submitted.includes(p.id) ? '<span class="tag ok">✓ 提出済み</span>' : '<span class="tag wait">作成中…</span>';
     } else if (r) {
       if (p.id === r.presenterId) tag = '<span class="tag p">🎤 出題者</span>';
@@ -345,8 +367,24 @@ function roundBanner(extra = '') {
 }
 
 const genreLabel = (g) => g === 'all' ? 'すべてのジャンル' : g;
+const MODES = [
+  { id: 'normal', name: '🎲 おまかせお題', desc: '用意されたお題が1人ずつに配られます。お題を変えたり、自分で作ったりもできます' },
+  { id: 'swap', name: '🔀 お題交換', desc: '全員がお題と選択肢を作り、シャッフルしてほかの誰かに配ります。届いたお題で自分のランキングを作ります' },
+];
+const modeName = (m) => (MODES.find((x) => x.id === m) || MODES[0]).name;
+
+function modePicker() {
+  if (!isHost()) {
+    const m = MODES.find((x) => x.id === S.mode) || MODES[0];
+    return `<div class="genre-box"><h3>ゲームモード</h3><p class="genre-now">${m.name}</p>
+      <p class="muted" style="margin:4px 0 0">${m.desc}</p></div>`;
+  }
+  return `<div class="genre-box"><h3>ゲームモード</h3><div class="modes">${MODES.map((m) =>
+    `<button class="mode ${m.id === S.mode ? 'on' : ''}" data-act="setMode" data-mode="${m.id}"><b>${m.name}</b><span>${m.desc}</span></button>`).join('')}</div></div>`;
+}
 
 function genrePicker() {
+  if (S.mode === 'swap') return '';
   const opts = [{ name: 'all', count: S.genres.reduce((s, g) => s + g.count, 0) }, ...S.genres];
   if (!isHost()) {
     return `<div class="genre-box"><h3>お題のジャンル</h3><p class="genre-now">📚 ${esc(genreLabel(S.genre))}</p>
@@ -374,6 +412,7 @@ function viewLobby() {
     <aside class="card">
       <h3>参加者（${n}人）</h3>
       ${playerList('lobby')}
+      ${modePicker()}
       ${genrePicker()}
       <div class="actions">
         ${isHost()
@@ -402,10 +441,53 @@ function ranker(submitLabel, ch = S.round.choices) {
     </div>`;
 }
 
-function topicBox(r) { return `<div class="topic"><span class="label">お題</span>${esc(r.topic)}</div>`; }
+function topicBox(r) {
+  const by = S.mode === 'swap' || r.author
+    ? `<span class="author">✉️ ${r.author ? `${esc(nameOf(r.author))}さん${r.author === S.me ? '（あなた）' : ''}が作ったお題` : '用意されたお題'}</span>` : '';
+  return `<div class="topic"><span class="label">お題</span>${esc(r.topic)}${by}</div>`;
+}
+
+// お題交換モード：お題づくり
+function viewWriting() {
+  const d = S.myDraft;
+  const total = S.members.length, done = S.submitted.length;
+  const missing = S.members.filter((id) => !S.submitted.includes(id));
+  let body;
+  if (!S.members.includes(S.me)) {
+    body = `<section class="card"><div class="waiting"><div class="spinner"></div><p class="muted">みんながお題を作成中です…</p></div></section>`;
+  } else if (!d) {
+    const w = ui.write;
+    body = `<section class="card wform">
+      <h2>✏️ お題を作ろう</h2>
+      <p class="muted">あなたが作ったお題は、シャッフルされて<b>ほかの誰か</b>に届きます。届いた人はそのお題で自分のランキングを作り、みんながそれを予想します。</p>
+      <button class="btn ghost small" style="width:100%;margin-bottom:14px" data-act="openSuggest">💡 思いつかないときは、用意されたお題から選ぶ</button>
+      <label for="w-topic">お題</label>
+      <input type="text" id="w-topic" data-w="topic" maxlength="30" placeholder="例: 無人島に持っていくなら" value="${esc(w.topic)}">
+      <label style="margin-top:8px">選択肢（5個）</label>
+      <div class="chs">${w.choices.map((c, i) => `<input type="text" data-w="c${i}" maxlength="20" placeholder="選択肢${i + 1}" value="${esc(c)}">`).join('')}</div>
+      <div class="actions"><button class="btn purple" data-act="writeTopic">このお題で提出！</button></div>
+    </section>`;
+  } else {
+    body = `<section class="card"><h2>✓ お題を提出しました</h2>
+      <div class="topic"><span class="label">あなたが作ったお題</span>${esc(d.topic)}</div>
+      <div class="pool">${d.choices.map((c) => `<span class="tag" style="font-size:14px;padding:6px 12px">${esc(c)}</span>`).join('')}</div>
+      <div class="waiting" style="padding:16px 0 0"><div class="spinner"></div>
+        <div class="muted">全員がそろうと、お題をシャッフルして配ります</div>
+        <button class="linkbtn" data-act="unwriteTopic">お題を修正する</button></div></section>`;
+  }
+  const progress = `<div class="card">
+    <h3>提出状況 ${done} / ${total}</h3>
+    <div class="progress"><i style="width:${total ? (done / total) * 100 : 0}%"></i></div>
+    ${missing.length ? `<p class="muted">作成中：${missing.map((id) => esc(nameOf(id))).join('、')}</p>` : ''}
+    ${isHost() && missing.length && done ? '<button class="linkbtn" data-act="forceDistribute">作成中の人を待たずにお題を配る</button>' : ''}
+  </div>`;
+  const banner = `<div class="banner"><span>お題づくりタイム</span><span class="spacer"></span><small>${modeName('swap')}</small></div>`;
+  return `${banner}<div class="layout two" style="margin-top:16px"><div>${body}<div style="margin-top:16px">${progress}</div></div>${sidePanel()}</div>`;
+}
 
 function viewRanking() {
   const sh = S.mySheet;
+  const swap = S.mode === 'swap';
   const total = S.members.length, done = S.submitted.length;
   const missing = S.members.filter((id) => !S.submitted.includes(id));
   let body;
@@ -414,12 +496,14 @@ function viewRanking() {
   } else if (!sh.answer) {
     body = `<section class="card">
       <h2>✍️ あなたのランキングを作ろう</h2>
-      <p class="muted">全員がそれぞれ別のお題でランキングを作ります。あなたの好みで1位〜5位を決めてください。あとでみんながこれを予想します。</p>
+      <p class="muted">${swap
+        ? 'ほかの人が作ったお題が届きました！あなたの好みで1位〜5位を決めてください。あとでみんながこれを予想します。'
+        : '全員がそれぞれ別のお題でランキングを作ります。あなたの好みで1位〜5位を決めてください。あとでみんながこれを予想します。'}</p>
       ${topicBox(sh)}
-      <div class="row" style="margin-bottom:16px">
+      ${swap ? '' : `<div class="row" style="margin-bottom:16px">
         <button class="btn ghost small" data-act="reroll">🎲 お題を変える</button>
         <button class="btn ghost small" data-act="custom">✏️ 自分でお題を作る</button>
-      </div>
+      </div>`}
       ${ranker('このランキングで決定！', sh.choices)}
     </section>`;
   } else {
@@ -436,7 +520,7 @@ function viewRanking() {
     ${missing.length ? `<p class="muted">作成中：${missing.map((id) => esc(nameOf(id))).join('、')}</p>` : ''}
     ${isHost() && missing.length && done ? '<button class="linkbtn" data-act="forceStartGuessing">作成中の人を待たずに予想タイムを始める</button>' : ''}
   </div>`;
-  const banner = `<div class="banner"><span>ランキング作成タイム</span><span class="spacer"></span><small>📚 ${esc(genreLabel(S.genre))}</small></div>`;
+  const banner = `<div class="banner"><span>ランキング作成タイム</span><span class="spacer"></span><small>${swap ? modeName('swap') : `📚 ${esc(genreLabel(S.genre))}`}</small></div>`;
   return `${banner}<div class="layout two" style="margin-top:16px"><div>${body}<div style="margin-top:16px">${progress}</div></div>${sidePanel()}</div>`;
 }
 
@@ -544,6 +628,22 @@ function openCustom() {
 }
 const closeModal = () => { $('#modal-root').innerHTML = ''; };
 
+// お題交換モード：用意されたお題の候補から選ぶ
+let suggestList = [];
+async function openSuggest() {
+  let j = null;
+  try { j = await fetch('/api/suggest?n=6').then((r) => r.json()); } catch {}
+  if (!j?.list) return toast('お題の候補を読み込めませんでした');
+  suggestList = j.list;
+  $('#modal-root').innerHTML = `<div class="modal-bg" data-act="closeModal"><div class="modal">
+    <h2>💡 お題を選ぶ</h2>
+    <p class="muted" style="margin-top:0">タップすると入力欄に入ります。選んだあとで書きかえてもOKです</p>
+    <div class="modes">${suggestList.map((t, i) => `<button class="mode" data-act="useSuggest" data-i="${i}">
+      <b>${esc(t.topic)}</b><span>${t.choices.map(esc).join('／')}</span></button>`).join('')}</div>
+    <div class="actions two"><button class="btn ghost" data-act="closeModal">閉じる</button>
+      <button class="btn purple" data-act="openSuggest">🎲 ほかの候補を見る</button></div></div></div>`;
+}
+
 // ---------- 操作 ----------
 const handlers = {
   async create() {
@@ -601,6 +701,29 @@ const handlers = {
   forceReveal: () => { if (confirm('未回答の人は0ptになります。答え合わせしますか？')) act('forceReveal'); },
   forceStartGuessing: () => { if (confirm('作成中の人のお題は出題されません。予想タイムを始めますか？')) act('forceStartGuessing'); },
   unsubmit: () => act('unsubmit'),
+  setMode: (el) => { if (el.dataset.mode !== S.mode) act('setMode', { mode: el.dataset.mode }); },
+  async writeTopic() {
+    const w = ui.write;
+    const topic = w.topic.trim(), choices = w.choices.map((c) => c.trim());
+    if (!topic) { toast('お題を入力してください'); return $('#w-topic').focus(); }
+    if (choices.some((c) => !c)) return toast('選択肢を5個すべて入力してください');
+    if (new Set(choices).size !== 5) return toast('選択肢が重複しています');
+    await act('writeTopic', { topic, choices });
+  },
+  unwriteTopic: async () => {
+    const d = S.myDraft;
+    if (d && await act('unwriteTopic')) ui.write = { topic: d.topic, choices: d.choices.slice() };
+  },
+  openSuggest,
+  useSuggest(el) {
+    const t = suggestList[Number(el.dataset.i)];
+    if (!t) return;
+    const filled = ui.write.topic.trim() || ui.write.choices.some((c) => c.trim());
+    if (filled && !confirm('入力中の内容を、このお題に置きかえますか？')) return;
+    ui.write = { topic: t.topic, choices: t.choices.slice() };
+    closeModal(); last.app = null; render();
+  },
+  forceDistribute: () => { if (confirm('作成中の人の分は、用意されたお題で補います。お題を配りますか？')) act('forceDistribute'); },
   setGenre: (el) => { if (el.dataset.genre !== S.genre) act('setGenre', { genre: el.dataset.genre }); },
   closeRoom: () => {
     if (confirm('ゲームを強制終了して、全員を参加前の画面に戻しますか？\n（ルームは解散され、得点は消えます）')) act('closeRoom');
@@ -621,6 +744,13 @@ document.addEventListener('click', (e) => {
   if (el.classList.contains('modal-bg') && e.target !== el) return;
   const h = handlers[el.dataset.act];
   if (h) { e.preventDefault(); h(el); }
+});
+// お題づくりの入力内容は ui.write に保持（再描画で消えないように）
+document.addEventListener('input', (e) => {
+  const k = e.target.dataset && e.target.dataset.w;
+  if (!k) return;
+  if (k === 'topic') ui.write.topic = e.target.value;
+  else ui.write.choices[Number(k.slice(1))] = e.target.value;
 });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || !e.target.matches('#name, #code')) return;

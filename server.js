@@ -51,7 +51,8 @@ function isValidOrder(order) {
 function createRoom() {
   const code = newRoomCode();
   if (!code) return null;
-  const room = { code, hostId: null, players: [], phase: 'lobby', genre: ALL, game: null, touched: Date.now() };
+  // mode: 'normal' = 配られたお題で自分のランキングを作る / 'swap' = 各自がお題を作り、シャッフルして配る
+  const room = { code, hostId: null, players: [], phase: 'lobby', mode: 'normal', genre: ALL, game: null, touched: Date.now() };
   rooms.set(code, room);
   return room;
 }
@@ -87,14 +88,46 @@ function startGame(room) {
     idx: 0,
     scores: Object.fromEntries(members.map((id) => [id, 0])),
     correct, // correct[a][b] = a が b のランキングを当てた個数
-    genre: room.genre, // 出題ジャンル（'all' なら全ジャンル）
+    mode: room.mode,
+    genre: room.mode === 'swap' ? ALL : room.genre, // 出題ジャンル（'all' なら全ジャンル）
     usedTopics: new Set(),
-    sheets: {}, // 各自のお題とランキング { topic, choices, answer }
+    sheets: {}, // 各自のお題とランキング { topic, choices, author, answer }
+    drafts: {}, // お題交換モードで各自が作ったお題 { topic, choices }
     round: null,
   };
+  if (room.mode === 'swap') {
+    // まず全員がお題を作る。そろったらシャッフルして配る
+    room.phase = 'writing';
+    return;
+  }
   // 全員に別々のお題を配り、同時にランキングを作ってもらう
-  for (const id of members) room.game.sheets[id] = { ...pickTopic(room.game, true), answer: null };
+  for (const id of members) room.game.sheets[id] = { ...pickTopic(room.game, true), author: null, answer: null };
   room.phase = 'ranking';
+}
+
+// お題交換モード：作られたお題をシャッフルし、自分以外の誰かに配る
+// シャッフルした並びで「次の人」に渡すので、自分のお題が自分に戻ることはない
+function distributeTopics(room) {
+  const g = room.game;
+  const ring = shuffle(g.members);
+  ring.forEach((author, i) => {
+    const to = ring[(i + 1) % ring.length];
+    const d = g.drafts[author];
+    // お題を作らなかった人の分は、用意されたお題から代わりに配る
+    g.sheets[to] = d
+      ? { topic: d.topic, choices: shuffle(d.choices), author, answer: null }
+      : { ...pickTopic(g, true), author: null, answer: null };
+  });
+  room.phase = 'ranking';
+}
+
+function parseTopic(body) {
+  const topic = cleanText(body.topic, 30);
+  const choices = Array.isArray(body.choices) ? body.choices.map((c) => cleanText(c, 20)) : [];
+  if (!topic) return { error: 'お題を入力してください' };
+  if (choices.length !== 5 || choices.some((c) => !c)) return { error: '選択肢を5個すべて入力してください' };
+  if (new Set(choices).size !== 5) return { error: '選択肢が重複しています' };
+  return { topic, choices };
 }
 
 // ランキング提出済みの人だけで、予想→答え合わせのラウンドを開始する
@@ -128,8 +161,8 @@ function pickTopic(game, allowDuplicate = false) {
 function beginRound(room) {
   const g = room.game;
   const presenterId = g.order[g.idx];
-  const { topic, choices, answer } = g.sheets[presenterId];
-  g.round = { presenterId, topic, choices, answer, guesses: {}, results: null };
+  const { topic, choices, author, answer } = g.sheets[presenterId];
+  g.round = { presenterId, topic, choices, author, answer, guesses: {}, results: null };
   room.phase = 'guessing';
 }
 
@@ -184,10 +217,17 @@ function viewFor(room, me) {
     me: me.id,
     hostId: room.hostId,
     phase: room.phase,
+    mode: room.mode,
     genre: room.genre,
     genres: GENRE_LIST,
     players: room.players.map((p) => ({ id: p.id, name: p.name, online: online(p), score: g ? g.scores[p.id] ?? 0 : 0 })),
   };
+  if (g && room.phase === 'writing') {
+    // 自分が作ったお題だけを送る。他人については「作成済みか」だけ
+    if (g.drafts[me.id]) v.myDraft = g.drafts[me.id];
+    v.submitted = g.members.filter((id) => g.drafts[id]);
+    v.members = g.members;
+  }
   if (g && room.phase === 'ranking') {
     // 自分のお題・ランキングだけを送る。他人については「提出済みか」だけ
     if (g.sheets[me.id]) v.mySheet = g.sheets[me.id];
@@ -202,7 +242,7 @@ function viewFor(room, me) {
   const r = g?.round;
   if (r && ['guessing', 'reveal'].includes(room.phase)) {
     const isPresenter = r.presenterId === me.id;
-    v.round = { presenterId: r.presenterId, guessers: guessersOf(room), topic: r.topic, choices: r.choices, answered: Object.keys(r.guesses) };
+    v.round = { presenterId: r.presenterId, guessers: guessersOf(room), topic: r.topic, choices: r.choices, author: r.author, answered: Object.keys(r.guesses) };
     if (room.phase === 'guessing') {
       if (isPresenter) v.round.answer = r.answer;          // 正解は出題者本人にだけ
       if (r.guesses[me.id]) v.round.myGuess = r.guesses[me.id]; // 予想は本人にだけ
@@ -246,6 +286,35 @@ function handleAction(room, me, body) {
       room.genre = body.genre;
       return null;
 
+    case 'setMode':
+      if (!isHost) return '部屋主だけがモードを選べます';
+      if (room.phase !== 'lobby') return 'モードはゲーム開始前に選んでください';
+      if (!['normal', 'swap'].includes(body.mode)) return 'そのモードはありません';
+      room.mode = body.mode;
+      return null;
+
+    case 'writeTopic': { // お題交換モード：自分のお題を提出（全員そろう前なら上書き可）
+      if (room.phase !== 'writing') return 'いまはお題を作れません';
+      if (!g.members.includes(me.id)) return 'このゲームの参加者ではありません';
+      const t = parseTopic(body);
+      if (t.error) return t.error;
+      g.drafts[me.id] = t;
+      if (g.members.every((id) => g.drafts[id])) distributeTopics(room);
+      return null;
+    }
+
+    case 'unwriteTopic':
+      if (room.phase !== 'writing' || !g.drafts[me.id]) return 'いまは修正できません';
+      delete g.drafts[me.id];
+      return null;
+
+    case 'forceDistribute': // 作成中の人を待たずに配る（その人の分は用意されたお題で補う）
+      if (!isHost) return '部屋主だけが操作できます';
+      if (room.phase !== 'writing') return 'いまは配れません';
+      if (!g.members.some((id) => g.drafts[id])) return 'まだ誰もお題を作っていません';
+      distributeTopics(room);
+      return null;
+
     case 'kick': {
       if (!isHost) return '部屋主だけが操作できます';
       if (room.phase !== 'lobby') return 'ゲーム中は退出させられません';
@@ -265,6 +334,7 @@ function handleAction(room, me, body) {
 
     case 'reroll':
       if (room.phase !== 'ranking' || !mySheet || mySheet.answer) return 'いまはお題を変更できません';
+      if (g.mode === 'swap') return 'お題交換モードでは、届いたお題は変えられません';
     {
       const picked = pickTopic(g);
       if (!picked) return 'このジャンルには、ほかに使えるお題がありません';
@@ -274,13 +344,11 @@ function handleAction(room, me, body) {
 
     case 'custom': {
       if (room.phase !== 'ranking' || !mySheet || mySheet.answer) return 'いまはお題を変更できません';
-      const topic = cleanText(body.topic, 30);
-      const choices = Array.isArray(body.choices) ? body.choices.map((c) => cleanText(c, 20)) : [];
-      if (!topic) return 'お題を入力してください';
-      if (choices.length !== 5 || choices.some((c) => !c)) return '選択肢を5個すべて入力してください';
-      if (new Set(choices).size !== 5) return '選択肢が重複しています';
-      mySheet.topic = topic;
-      mySheet.choices = choices;
+      if (g.mode === 'swap') return 'お題交換モードでは、届いたお題は変えられません';
+      const t = parseTopic(body);
+      if (t.error) return t.error;
+      mySheet.topic = t.topic;
+      mySheet.choices = t.choices;
       return null;
     }
 
@@ -400,6 +468,13 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
 
   if (req.method === 'GET' && p === '/api/info') return sendJson(res, 200, { lanUrls: lanUrls() });
+
+  // お題交換モードで「お題が思いつかない」ときの候補（用意されたお題からランダムに数個）
+  if (req.method === 'GET' && p === '/api/suggest') {
+    const n = Math.min(10, Math.max(1, Number(url.searchParams.get('n')) || 6));
+    const list = shuffle(TOPICS).slice(0, n).map((t) => ({ genre: t.genre, topic: t.topic, choices: t.choices }));
+    return sendJson(res, 200, { list });
+  }
 
   if (req.method === 'GET' && p === '/api/events') {
     const room = rooms.get(url.searchParams.get('code') || '');
